@@ -1,0 +1,18 @@
+[tool.poetry]
+name = "pyoptics"
+version = "0.1.0"
+description = "a very simple Python optics library"
+authors = ["Wojciech Orański <wojtekor9@gmail.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.12"
+numpy = "^1.26.4"
+pygame = "^2.5.2"
+
+[tool.poetry.group.dev.dependencies]
+mypy = "^1.10.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
