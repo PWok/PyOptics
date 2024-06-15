@@ -1,44 +1,76 @@
+import argparse
+
 import pygame
 from pyoptics.renderer import *
+from pyoptics.optics2d import *
+
+from pyoptics.utils import scene_from_cfg
+
+
+parser = argparse.ArgumentParser()
+parser.add_argument("-c", "--config", help="Path to a configuration file", default=None)
+parser.add_argument(
+    "-r",
+    "--resolution",
+    help="Resolution of the rendered window",
+    nargs=2,
+    type=int,
+    default=(600, 600),
+)
+parser.add_argument(
+    "-s", "--scale", help="Scale of the simulation", type=float, default=40
+)
+
+args = parser.parse_args()
 
 
 pygame.init()
-screen = pygame.display.set_mode((600, 600))
-
-running = True
-
+screen = pygame.display.set_mode(tuple(args.resolution))
 screen.fill((255, 255, 255))
 
+if args.config:
+    scene = scene_from_cfg(args.config, screen, steps=10, scale=args.scale)
+else:
+    scene = RenderScene(OpticSystem(), screen, steps=10, scale=args.scale)
 
-optics = [
-        FlatMirror((4, 0), -pi/8, 1),
-        FlatMirror((0, 5), pi/2, 10),
-        FlatMirror((-2.5, 1.75), -pi/6, 2),
-        FlatMirror((0, -5), pi/2, 10),
-        FlatMirror((5, 0), 0, 10),
-        FlatMirror((-5, 0), 0, 10),
-        SphericalMirror((3, 0), 0, 2, 0.25),
-        SphericalMirror((-3, 0), 0, 2, 1),
-]
-rays = [RayEmitter((0, 0), pi/117)]
-
-system = OpticSystem(optics, rays)
-
-scene = RenderScene(system, screen)
-
-scene.run(1)
+scene.run()
 
 pygame.display.flip()
 
 
-
+running = True
 while running:
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
-            
+
         elif event.type == pygame.KEYDOWN:
-            if event.key==pygame.K_RETURN or pygame.K_KP_ENTER or pygame.K_SPACE:
-                scene.step()
-                scene.render()
-                pygame.display.flip()
+            window_loc = pygame.mouse.get_pos()
+            loc = scene.from_scene_coords(window_loc)
+            match (event.key):
+                # step
+                case pygame.K_RETURN | pygame.K_KP_ENTER | pygame.K_SPACE:
+                    scene.step()
+                    scene.render()
+                    pygame.display.flip()
+
+                    continue
+
+                # add flat mirror
+                case pygame.K_f:
+                    scene.add(FlatMirror(loc, 0, 1))
+
+                # add spherical mirror
+                case pygame.K_s:
+                    scene.add(SphericalMirror(loc, 0, 1))
+
+                # add lens
+                case pygame.K_l:
+                    scene.add(Lens(loc, 0, 1))
+
+                case pygame.K_r | pygame.K_e:
+                    scene.add(RayEmitter(loc, 0))
+
+            scene.reset()
+            scene.run()
+            pygame.display.flip()

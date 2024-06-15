@@ -5,6 +5,15 @@ import pygame
 
 from ..optics2d import *
 
+__all__ = [
+    "Renderable",
+    "RenderRay",
+    "RenderFlat",
+    "RenderArc",
+    "RenderLens",
+    "RenderScene",
+]
+
 STEEL = pygame.Color("#99a3a3")
 RED = pygame.Color("#c70e20")
 BLUE = pygame.Color("#23acc4")
@@ -27,17 +36,6 @@ def _vector_mult(vec: VecArg, scalar: float | int) -> VecArg:
     return (vec[0] * scalar, vec[1] * scalar)
 
 
-def _to_pygame_coords(vec: VecArg):
-    return (
-        vec[0] * PYGAME_SCALE + PYGAME_MIDDLE_OFFSET[0],
-        -vec[1] * PYGAME_SCALE + PYGAME_MIDDLE_OFFSET[1],
-    )
-
-
-def _to_pygame_scale(val: float):
-    return val * PYGAME_SCALE
-
-
 class Renderable(ABC):
     def __init__(self, obj, color=BLUE, width=DEFAULT_LINE_WIDTH) -> None:
         self.obj = obj
@@ -45,7 +43,7 @@ class Renderable(ABC):
         self.width = width
 
     @abstractmethod
-    def render(self, scr) -> pygame.Surface:
+    def render(self, scene: "RenderScene") -> None:
         raise NotImplementedError
 
 
@@ -58,25 +56,21 @@ class RenderRay(Renderable):
         self.ray_color = ray_color
         self.ray_width = ray_width
 
-    def render(self, scr) -> pygame.Surface:
-        loc = _to_pygame_coords(self.obj.location)
+    def render(self, scene: "RenderScene"):
+        loc = scene.to_scene_coords(self.obj.location)
         points = [loc] + list(
             map(
-                _to_pygame_coords,
+                scene.to_scene_coords,
                 self.obj.bounce_locations + [self.obj.last_bounce_location],
             )
         )
-
-        # print(self.obj.bounce_locations)
-        pygame.draw.circle(scr, self.color, loc, PYGAME_SCALE / 2)
+        pygame.draw.circle(scene.scr, self.color, loc, scene.scale / 2)
         if len(points) >= 2:
-            pygame.draw.lines(scr, self.ray_color, False, points, self.ray_width)
-
-        return scr
+            pygame.draw.lines(scene.scr, self.ray_color, False, points, self.ray_width)
 
 
 class RenderFlat(Renderable):
-    def render(self, scr) -> pygame.Surface:
+    def render(self, scene: "RenderScene"):
         self.obj: FlatMirror
         ang = self.obj.rotation
         scale = self.obj.scale / 2
@@ -84,16 +78,14 @@ class RenderFlat(Renderable):
 
         vec = (cos(ang) * scale, sin(ang) * scale)
 
-        start = _to_pygame_coords(_vector_add(loc, vec))
-        end = _to_pygame_coords(_vector_add(loc, _vector_mult(vec, -1)))
+        start = scene.to_scene_coords(_vector_add(loc, vec))
+        end = scene.to_scene_coords(_vector_add(loc, _vector_mult(vec, -1)))
 
-        pygame.draw.line(scr, self.color, start, end, width=self.width)
-
-        return scr
+        pygame.draw.line(scene.scr, self.color, start, end, width=self.width)
 
 
 class RenderArc(Renderable):
-    def render(self, scr) -> pygame.Surface:
+    def render(self, scene: "RenderScene"):
         self.obj: SphericalMirror
         rot = -self.obj.rotation
         scale = self.obj.scale
@@ -101,49 +93,57 @@ class RenderArc(Renderable):
         radius = self.obj.focal * 2 * scale
 
         vec = (
-            _to_pygame_scale(-radius * cos(rot) - radius),
-            _to_pygame_scale(-radius * sin(rot) - radius),
+            scene.to_scene_scale(-radius * cos(rot) - radius),
+            scene.to_scene_scale(-radius * sin(rot) - radius),
         )
 
-        loc = _vector_add(_to_pygame_coords(tuple(self.obj.location)), vec)
+        loc = _vector_add(scene.to_scene_coords(tuple(self.obj.location)), vec)
 
         pygame.draw.arc(
-            scr,
+            scene.scr,
             self.color,
             pygame.Rect(
                 loc[0],
                 loc[1],
-                _to_pygame_scale(2 * radius),
-                _to_pygame_scale(2 * radius),
+                scene.to_scene_scale(2 * radius),
+                scene.to_scene_scale(2 * radius),
             ),
             -asin(0.25 / self.obj.focal) - rot,
             asin(0.25 / self.obj.focal) - rot,
             width=self.width,
         )
-        return scr
 
 
 class RenderLens(Renderable):
     NotImplemented
 
-    def render(self, scr) -> pygame.Surface:
-        return scr
+    def render(self, scene):
+        pass
 
 
 class RenderScene:
-    def __init__(self, system: OpticSystem, scr: pygame.Surface, steps=STEPS) -> None:
+    def __init__(
+        self,
+        system: OpticSystem,
+        scr: pygame.Surface,
+        steps: int = STEPS,
+        scale: float|int = PYGAME_SCALE,
+        middle: tuple[int, int] = PYGAME_MIDDLE_OFFSET,
+    ) -> None:
         self.system = system
         self.scr = scr
         self.steps = steps
+        self.scale = scale
+        self.middle = middle
 
         self.object_renderers: list[Renderable] = list(
             map(self._make_renderer, system.optics + system.rays)  # type: ignore #I know what im doing
         )
-        
+
     def reset(self) -> None:
         self.system.reset()
 
-    def add(self, obj: Optic|RayEmitter) -> None:
+    def add(self, obj: Optic | RayEmitter) -> None:
         self.system.add(obj)
         self.object_renderers.append(self._make_renderer(obj))
 
@@ -154,8 +154,8 @@ class RenderScene:
         self.scr.fill(BACKGROUND_COLOR)
 
         for _ in range(steps):
-            # print("\n\n", i)
             if self.system.step():
+                print("ending")
                 break
 
         self.render()
@@ -165,13 +165,28 @@ class RenderScene:
     def step(self):
         self.system.step()
         for i in self.object_renderers:
-            i.render(self.scr)
+            i.render(self)
 
         return self.scr
 
     def render(self):
         for j in self.object_renderers:
-            j.render(self.scr)
+            j.render(self)
+
+    def to_scene_coords(self, vec: VecArg):
+        return (
+            vec[0] * self.scale + self.middle[0],
+            -vec[1] * self.scale + self.middle[1],
+        )
+
+    def to_scene_scale(self, val: float):
+        return val * self.scale
+
+    def from_scene_coords(self, loc: tuple[int, int]):
+        return (
+            (loc[0] - self.middle[0]) / self.scale,
+            -(loc[1] - self.middle[1]) / self.scale,
+        )
 
     @staticmethod
     def _make_renderer(obj):

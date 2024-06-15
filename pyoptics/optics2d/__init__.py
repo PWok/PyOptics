@@ -37,11 +37,11 @@ class RayEmitter:
         self.last_bounce_direction: Angle = rotation
 
         self.bounce_locations: list[VecArg] = []
-        
+
     def reset(self):
         self.last_bounce_location = self.location
         self.last_bounce_direction = self.rotation
-        
+
         self.bounce_locations = []
 
 
@@ -65,7 +65,17 @@ class Optic(ABC):
 
 # TODO
 class Lens(Optic):
-    pass
+    def __init__(
+        self, location: VecArg, rotation: Angle, scale: float, focal1=1.0, focal2=1.0
+    ) -> None:
+        self.location = location
+        self.rotation = rotation
+        self.scale = scale
+        self.focal1 = focal1
+        self.focal2 = focal2
+
+    def get_bounce(self, ray: RayEmitter) -> tuple[tuple[float, float], float] | None:
+        return None
 
 
 class FlatMirror(Optic):
@@ -80,28 +90,21 @@ class FlatMirror(Optic):
 
         self_a = tan(self.rotation)
         ray_a = tan(direction)
-        # print("a", self_a, ray_a)
 
         self_b = self.location[1] - self_a * self.location[0]
         ray_b = prev_location[1] - ray_a * prev_location[0]
 
         d = np.linalg.det(((self_a, 1), (ray_a, 1)))
-        # print(f"{d = }, mat = {(self_a, 1), (ray_a, 1)}")
         if d == 0:
-            # print(None)
             return None
 
         dx = -np.linalg.det(((self_b, 1), (ray_b, 1)))
         dy = np.linalg.det(((self_a, self_b), (ray_a, ray_b)))
-        # print(f"{dx = }, mat = {(self_b, 1), (ray_b, 1)}")
-        # print(f"{dy = }, mat = {(self_a, self_b), (ray_a, ray_b)}")
 
         x = dx / d
         y = dy / d
 
         point = (x, y)
-        # print(point)
-        # print(f"{_distance(point, self.location) = }, {self.location = }")
         if _distance(point, self.location) > self.scale / 2:
             return None
 
@@ -132,7 +135,6 @@ class SphericalMirror(Optic):
         """
         Describe a spherical mirror by the location of its center, rotation, scale and focal length
         """
-        # TODO getters, setters - property
         self.location: np.ndarray = np.array(location)
         self.rotation: Angle = rotation
         self.scale: float = scale
@@ -146,7 +148,7 @@ class SphericalMirror(Optic):
 
         self._arc_angle_half = asin(0.5 / self._radius)
         self._max_distance = sqrt(
-            1 + (self._radius - sqrt(self._radius**2 - 1))**2
+            1 + (self._radius - sqrt(self._radius**2 - 1)) ** 2
         )  # arc_angle_fourth
 
     def _get_intersection(
@@ -166,36 +168,16 @@ class SphericalMirror(Optic):
         t1 = (1 / 2 * sqrt(under_root) - a * c - b * d + c * m + d * n) / (c**2 + d**2)
         t2 = (-1 / 2 * sqrt(under_root) - a * c - b * d + c * m + d * n) / (c**2 + d**2)
 
-        # print(t1, t2) # XXX debuuuuuuuuuuug (and thers a lot more wherer that came from)
-
-        # FIXME intersection with circle is correct
-        # But im unsure about the intersection with an arc
         p1 = (a + t1 * c, b + t1 * d)
         p2 = (a + t2 * c, b + t2 * d)
-        print(f"center = {m, n}")
-        print(f"distance = {_distance(p1, (m, n))}, {r = }")
-        
-        if not isclose(_distance(p1, (m, n)), r):
-            print(234)
-        
-        print(f"{p1 = }, {p2 = }")
 
-        print(f"{self._max_distance = }")
-        
-        
         ret1 = _distance(p1, self.location) <= self._max_distance and t1 > 0
         ret2 = _distance(p2, self.location) <= self._max_distance and t2 > 0
-        print(f"{_distance(p1, self.location) = } {_distance(p2, self.location) = }")
-        
-        print(f"{ret1 = }, {ret2 = }")
-        print("t1: ", t1, isclose(t1, 0, abs_tol=1e-16))
-        print("t2: ", t2, isclose(t2, 0, abs_tol=1e-16))
+
         if ret1 and ret2:
             if t1 < t2 or isclose(t2, 0, abs_tol=1e-14):
-                print("p111111111")
                 return p1
             else:
-                print("p222222222")
                 return p2
         if ret1:
             return p1
@@ -210,21 +192,23 @@ class SphericalMirror(Optic):
         if p_inter is None:
             return None
 
-        # XXX English is hard
         radius_vec = _normalize(p_inter - self._center)
-        
+
         dir_vec = _angle_to_direction_vec(dir_angle)
         # check if pointing in the same direction
         if np.dot(radius_vec, dir_vec) < 0:
-            radius_vec = - radius_vec
+            radius_vec = -radius_vec
 
         ang = _direction_vec_to_angle(dir_vec - 2 * radius_vec)
-        # TODO odbić kąt padania symetrycznie względem `radius_vec` i pomnożyć przez -1
         return (p_inter, ang)
 
 
 class OpticSystem:
-    def __init__(self, optics: Iterable[Optic]|None = None, rays: Iterable[RayEmitter]|None = None) -> None:
+    def __init__(
+        self,
+        optics: Iterable[Optic] | None = None,
+        rays: Iterable[RayEmitter] | None = None,
+    ) -> None:
         if optics is None:
             optics = []
         if rays is None:
@@ -232,12 +216,12 @@ class OpticSystem:
 
         self.optics: list[Optic] = list(optics)
         self.rays: list[RayEmitter] = list(rays)
-        
+
     def reset(self) -> None:
         for i in self.rays:
             i.reset()
-    
-    def add(self, obj: Optic|RayEmitter):
+
+    def add(self, obj: Optic | RayEmitter):
         if isinstance(obj, Optic):
             self.optics.append(obj)
         else:
@@ -252,16 +236,12 @@ class OpticSystem:
         bool
             True if nothing changed and the simulation should end, False otherwise.
         """
-        fin = True
-        
-        print("--------------------------------------")
+        fin = 0
 
         # TODO this is awful. REDO all of this
         for ray in self.rays:
             loc = ray.last_bounce_location
             direction = ray.last_bounce_direction
-
-            # print(f"{direction = }")
 
             intersections = [optic.get_bounce(ray) for optic in self.optics]
 
@@ -275,20 +255,11 @@ class OpticSystem:
 
             for inter in intersections:
                 if inter is None:
-                    print(f"{inter = }")
                     continue
 
                 l = inter[0]
 
                 dis = _distance(loc, l)
-                print(f"point = {l}")
-                print(f"{_points_close(loc, l) = }")
-                print(f"dir vec  = {dir_vect}")
-                print(f"move vec = {_normalize(np.asarray(l) - arr_loc)}")
-                print(
-                    f"dir close = {_points_close(dir_vect, _normalize(np.asarray(l) - arr_loc))}"
-                )
-                print()
                 if (
                     dis < new_distance
                     and _points_close(dir_vect, _normalize(np.asarray(l) - arr_loc))
@@ -298,19 +269,18 @@ class OpticSystem:
                     new_direction = inter[1]
                     new_distance = dis
 
-            # print(f"{new_loc = }")
             if new_loc is None:
                 ray.bounce_locations.append(loc)
-                ray.last_bounce_location = tuple(arr_loc + BIG_NUMBER * dir_vect)  # type: ignore
-                return True
+                ray.last_bounce_location = tuple(arr_loc + BIG_NUMBER * dir_vect)
+                fin +=1
+                continue
             if loc != new_loc or direction != new_direction:
                 ray.bounce_locations.append(loc)
                 ray.last_bounce_location = new_loc
                 ray.last_bounce_direction = new_direction
 
-                fin = False
-
-        return fin
+        print(fin)
+        return fin==len(self.rays)
 
 
 def _distance(point_a: VecArg | np.ndarray, point_b: VecArg | np.ndarray):
@@ -330,9 +300,10 @@ def _direction_vec_to_angle(direction: DirectionVec):
         return 0 if direction[0] > 0 else -pi
     if direction[0] == 0:
         return copysign(PI_HALF, direction[1])
-    return _normalize_angle(atan(direction[1] / direction[0]) + (
-        copysign(pi, direction[0]) if direction[0] < 0 else 0
-    ))
+    return _normalize_angle(
+        atan(direction[1] / direction[0])
+        + (copysign(pi, direction[0]) if direction[0] < 0 else 0)
+    )
 
 
 def _normalize(vector: np.ndarray) -> np.ndarray:
