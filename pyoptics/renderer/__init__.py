@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from math import asin, cos, sin, pi
+from math import asin, cos, sin
 
 import pygame
 
@@ -64,7 +64,7 @@ class RenderRay(Renderable):
                 self.obj.bounce_locations + [self.obj.last_bounce_location],
             )
         )
-        pygame.draw.circle(scene.scr, self.color, loc, scene.scale / 2)
+        pygame.draw.circle(scene.scr, self.color, loc, scene.scale / 10)
         if len(points) >= 2:
             pygame.draw.lines(scene.scr, self.ray_color, False, points, self.ray_width)
 
@@ -88,9 +88,9 @@ class RenderArc(Renderable):
     def render(self, scene: "RenderScene"):
         self.obj: SphericalMirror
         rot = -self.obj.rotation
-        scale = self.obj.scale
+        chord = self.obj.chord_len
 
-        radius = self.obj.focal * 2 * scale
+        radius = self.obj.focal * 2
 
         vec = (
             scene.to_scene_scale(-radius * cos(rot) - radius),
@@ -108,8 +108,8 @@ class RenderArc(Renderable):
                 scene.to_scene_scale(2 * radius),
                 scene.to_scene_scale(2 * radius),
             ),
-            -asin(0.25 / self.obj.focal) - rot,
-            asin(0.25 / self.obj.focal) - rot,
+            -asin(chord/radius/2) - rot,
+            asin(chord/radius/2) - rot,
             width=self.width,
         )
 
@@ -155,7 +155,6 @@ class RenderScene:
 
         for _ in range(steps):
             if self.system.step():
-                print("ending")
                 break
 
         self.render()

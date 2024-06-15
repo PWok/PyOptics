@@ -130,25 +130,25 @@ class FlatMirror(Optic):
 
 class SphericalMirror(Optic):
     def __init__(
-        self, location: VecArg, rotation: Angle, scale: float, focal: float = 1
+        self, location: VecArg, rotation: Angle, chord: float, focal: float = 1
     ) -> None:
         """
-        Describe a spherical mirror by the location of its center, rotation, scale and focal length
+        Describe a spherical mirror by the location of its center, rotation, chord and focal length
         """
         self.location: np.ndarray = np.array(location)
         self.rotation: Angle = rotation
-        self.scale: float = scale
+        self.chord_len: float = chord
         self.focal = focal
 
-        self._radius = self.focal * 2 * self.scale
+        self._radius = self.focal * 2
 
         self._center_x = self.location[0] - self._radius * cos(self.rotation)
         self._center_y = self.location[1] - self._radius * sin(self.rotation)
         self._center = np.array((self._center_x, self._center_y))
 
-        self._arc_angle_half = asin(0.5 / self._radius)
         self._max_distance = sqrt(
-            1 + (self._radius - sqrt(self._radius**2 - 1)) ** 2
+            (self.chord_len/2) ** 2
+            + (self._radius - sqrt(self._radius**2 - (self.chord_len/2) ** 2)) ** 2
         )  # arc_angle_fourth
 
     def _get_intersection(
@@ -236,6 +236,7 @@ class OpticSystem:
         bool
             True if nothing changed and the simulation should end, False otherwise.
         """
+        
         fin = 0
 
         # TODO this is awful. REDO all of this
@@ -255,11 +256,13 @@ class OpticSystem:
 
             for inter in intersections:
                 if inter is None:
+
                     continue
 
                 l = inter[0]
 
                 dis = _distance(loc, l)
+
                 if (
                     dis < new_distance
                     and _points_close(dir_vect, _normalize(np.asarray(l) - arr_loc))
@@ -272,15 +275,14 @@ class OpticSystem:
             if new_loc is None:
                 ray.bounce_locations.append(loc)
                 ray.last_bounce_location = tuple(arr_loc + BIG_NUMBER * dir_vect)
-                fin +=1
+                fin += 1
                 continue
             if loc != new_loc or direction != new_direction:
                 ray.bounce_locations.append(loc)
                 ray.last_bounce_location = new_loc
                 ray.last_bounce_direction = new_direction
 
-        print(fin)
-        return fin==len(self.rays)
+        return fin == len(self.rays)
 
 
 def _distance(point_a: VecArg | np.ndarray, point_b: VecArg | np.ndarray):

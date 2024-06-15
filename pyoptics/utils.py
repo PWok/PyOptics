@@ -14,6 +14,12 @@ def scene_from_cfg(path: str, scr: Surface, steps = 1, scale = 40., middle=(300,
         optics: list[FlatMirror|SphericalMirror|Lens] = []
         rays: list[RayEmitter] = []
         for line in f.readlines():
+            line = line.strip()
+            
+            # remove comments
+            if "#" in line:
+                line = line[:line.index("#")]
+            
             if line.isspace():
                 continue
             

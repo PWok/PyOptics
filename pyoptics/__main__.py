@@ -20,6 +20,9 @@ parser.add_argument(
 parser.add_argument(
     "-s", "--scale", help="Scale of the simulation", type=float, default=40
 )
+parser.add_argument(
+    "-S", "--steps", help="Number of steps to run", type=int, default=20
+)
 
 args = parser.parse_args()
 
@@ -29,9 +32,9 @@ screen = pygame.display.set_mode(tuple(args.resolution))
 screen.fill((255, 255, 255))
 
 if args.config:
-    scene = scene_from_cfg(args.config, screen, steps=10, scale=args.scale)
+    scene = scene_from_cfg(args.config, screen, steps=args.steps, scale=args.scale)
 else:
-    scene = RenderScene(OpticSystem(), screen, steps=10, scale=args.scale)
+    scene = RenderScene(OpticSystem(), screen, steps=args.steps, scale=args.scale)
 
 scene.run()
 
@@ -68,8 +71,20 @@ while running:
                 case pygame.K_l:
                     scene.add(Lens(loc, 0, 1))
 
-                case pygame.K_r | pygame.K_e:
+                # add emitter
+                case pygame.K_e:
                     scene.add(RayEmitter(loc, 0))
+                
+                # reset
+                case pygame.K_r:
+                    del scene
+                    if args.config:
+                        scene = scene_from_cfg(args.config, screen, steps=args.steps, scale=args.scale)
+                    else:
+                        scene = RenderScene(OpticSystem(), screen, steps=args.steps, scale=args.scale)
+                
+                case _:
+                    continue   
 
             scene.reset()
             scene.run()
