@@ -48,11 +48,11 @@ class RayEmitter:
 
 
 class Optic(ABC):
-    
+
     @abstractmethod
     def __init__(self) -> None:
         self.location: VecArg
-    
+
     @abstractmethod
     def get_bounce(self, ray: RayEmitter) -> tuple[VecArg, Angle] | None:
         """return the coordinates of the next contact of a given light ray with this Optic and the rays new direction.
@@ -142,59 +142,121 @@ class SphericalMirror(Optic):
         """
         Describe a spherical mirror by the location of its center, rotation, chord and focal length
         """
-        self.location = asarray(location)
-        self.rotation: Angle = rotation
-        self.chord_len: float = chord
+        self.__location = asarray(location)
+        self.__rotation: Angle = rotation
+        self.__chord_len: float = chord
         self.focal = focal
 
-        self._radius = self.focal * 2
+        self.__radius = self.focal * 2
 
-        self._center_x = self.location[0] - self._radius * cos(self.rotation)
-        self._center_y = self.location[1] - self._radius * sin(self.rotation)
+        self._center_x = self.__location[0] - self.__radius * cos(self.__rotation)
+        self._center_y = self.__location[1] - self.__radius * sin(self.__rotation)
         self._center = np.array((self._center_x, self._center_y))
 
         self._max_distance = sqrt(
-            (self.chord_len/2) ** 2
-            + (self._radius - sqrt(self._radius**2 - (self.chord_len/2) ** 2)) ** 2
+            (self.__chord_len / 2) ** 2
+            + (self.__radius - sqrt(self.__radius**2 - (self.__chord_len / 2) ** 2))
+            ** 2
         )  # arc_angle_fourth
 
+    @property
+    def location(self) -> VecArg:
+        return self.__location
+
+    @location.setter
+    def location(self, value: VecArg) -> None:
+        self.__location = value
+
+        self._center_x = self.__location[0] - self.__radius * cos(self.__rotation)
+        self._center_y = self.__location[1] - self.__radius * sin(self.__rotation)
+        self._center = np.array((self._center_x, self._center_y))
+
+    @property
+    def rotation(self):
+        return self.__rotation
+
+    @rotation.setter
+    def rotation(self, value):
+        self.__rotation = value
+
+        self._center_x = self.__location[0] - self.__radius * cos(self.__rotation)
+        self._center_y = self.__location[1] - self.__radius * sin(self.__rotation)
+        self._center = np.array((self._center_x, self._center_y))
+
+    @property
+    def chord_len(self):
+        return self.__chord_len
+
+    @chord_len.setter
+    def chord_len(self, value):
+        self.__chord_len = value
+
+        self._max_distance = sqrt(
+            (self.__chord_len / 2) ** 2
+            + (self.__radius - sqrt(self.__radius**2 - (self.__chord_len / 2) ** 2))
+            ** 2
+        )
+
+    @property
+    def radius(self):
+        return self.__radius
+
+    @radius.setter
+    def radius(self, value):
+        self.__radius = value
+        self._center_x = self.__location[0] - self.__radius * cos(self.__rotation)
+        self._center_y = self.__location[1] - self.__radius * sin(self.__rotation)
+        self._center = np.array((self._center_x, self._center_y))
+
+        self._max_distance = sqrt(
+            (self.__chord_len / 2) ** 2
+            + (self.__radius - sqrt(self.__radius**2 - (self.__chord_len / 2) ** 2))
+            ** 2
+        )
 
     def __calculate_delta(self, prev_location, direction) -> tuple[float, float] | None:
         a, b = prev_location
         c, d = _angle_to_direction_vec(direction)
         m = self._center_x
         n = self._center_y
-        r = self._radius
+        r = self.__radius
         under_root = 4 * (a * c + b * d - c * m - d * n) ** 2 - 4 * (
             c**2 + d**2
         ) * (a**2 - 2 * a * m + b**2 - 2 * b * n + m**2 + n**2 - r**2)
-        
+
         if under_root < 0:
             return None
 
-        distance1 = (1 / 2 * sqrt(under_root) - a * c - b * d + c * m + d * n) / (c**2 + d**2)
-        distance2 = (-1 / 2 * sqrt(under_root) - a * c - b * d + c * m + d * n) / (c**2 + d**2)
-        
+        distance1 = (1 / 2 * sqrt(under_root) - a * c - b * d + c * m + d * n) / (
+            c**2 + d**2
+        )
+        distance2 = (-1 / 2 * sqrt(under_root) - a * c - b * d + c * m + d * n) / (
+            c**2 + d**2
+        )
+
         return distance1, distance2
-        
 
     def _get_intersection(
         self, prev_location: VecArg, direction: Angle
     ) -> VecArg | None:
-        
+
         distances = self.__calculate_delta(prev_location, direction)
         if distances is None:
             return None
-        
+
         distance1, distance2 = distances
-        
+
         dir_vec = _angle_to_direction_vec(direction)
 
-        point1 = prev_location + dir_vec*distance1
-        point2 = prev_location + dir_vec*distance2
+        point1 = prev_location + dir_vec * distance1
+        point2 = prev_location + dir_vec * distance2
 
-        ret1 = _distance(point1, self.location) <= self._max_distance and distance1 > 0
-        ret2 = _distance(point2, self.location) <= self._max_distance and distance2 > 0
+        ret1 = (
+            _distance(point1, self.location) <= self._max_distance and distance1 > 0
+        )
+        ret2 = (
+            _distance(point2, self.location) <= self._max_distance and distance2 > 0
+        )
 
         if ret1 and ret2:
             if distance1 < distance2 or isclose(distance2, 0, abs_tol=1e-14):
@@ -258,7 +320,7 @@ class OpticSystem:
         bool
             True if nothing changed and the simulation should end, False otherwise.
         """
-        
+
         fin = 0
 
         # TODO this is awful. REDO all of this
@@ -331,12 +393,11 @@ def _normalize(vector: VecArg) -> VecArg:
     return vector / np.linalg.norm(vector)
 
 
-def _points_close(
-    p1: VecArg, p2: VecArg, *, rel_tol=1e-9, abs_tol=1e-12
-):
+def _points_close(p1: VecArg, p2: VecArg, *, rel_tol=1e-9, abs_tol=1e-12):
     return isclose(p1[0], p2[0], abs_tol=abs_tol, rel_tol=rel_tol) and isclose(
         p1[1], p2[1], abs_tol=abs_tol, rel_tol=rel_tol
     )
+
 
 def _normalize_angle(ang: Angle):
     while ang > pi:

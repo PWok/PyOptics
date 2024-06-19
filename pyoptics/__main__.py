@@ -1,12 +1,12 @@
 import argparse
 
+from numpy import asarray
 import pygame
-from pyoptics.renderer import *
-from pyoptics.optics2d import *
 
+import pyoptics
 from pyoptics.utils import scene_from_cfg
 
-
+# command line parsing
 parser = argparse.ArgumentParser()
 parser.add_argument("-c", "--config", help="Path to a configuration file", default=None)
 parser.add_argument(
@@ -34,15 +34,18 @@ screen.fill((255, 255, 255))
 if args.config:
     scene = scene_from_cfg(args.config, screen, steps=args.steps, scale=args.scale)
 else:
-    scene = RenderScene(OpticSystem(), screen, steps=args.steps, scale=args.scale)
+    scene = pyoptics.RenderScene(
+        pyoptics.OpticSystem(), screen, steps=args.steps, scale=args.scale
+    )
 
 scene.run()
 
 pygame.display.flip()
 
-
-
+# main loop
 # TODO: zmienne globalne... trzeba to przerobić
+initial_mouse_pos = 0,0
+initial_moved_loc = asarray((0,0))
 moved = None
 dragging = False
 
@@ -67,35 +70,41 @@ while running:
 
                 # add flat mirror
                 case pygame.K_f:
-                    scene.add(FlatMirror(loc, 0, 1))
+                    scene.add(pyoptics.FlatMirror(loc, 0, 1))
 
                 # add spherical mirror
                 case pygame.K_s:
-                    scene.add(SphericalMirror(loc, 0, 1))
+                    scene.add(pyoptics.SphericalMirror(loc, 0, 1))
 
                 # add lens
                 case pygame.K_l:
-                    scene.add(Lens(loc, 0, 1))
+                    scene.add(pyoptics.Lens(loc, 0, 1))
 
                 # add emitter
                 case pygame.K_e:
-                    scene.add(RayEmitter(loc, 0))
-                
+                    scene.add(pyoptics.RayEmitter(loc, 0))
+
                 # reset
                 case pygame.K_r:
                     del scene
                     if args.config:
-                        scene = scene_from_cfg(args.config, screen, steps=args.steps, scale=args.scale)
+                        scene = scene_from_cfg(
+                            args.config, screen, steps=args.steps, scale=args.scale
+                        )
                     else:
-                        scene = RenderScene(OpticSystem(), screen, steps=args.steps, scale=args.scale)
-                
+                        scene = pyoptics.RenderScene(
+                            pyoptics.OpticSystem(),
+                            screen,
+                            steps=args.steps,
+                            scale=args.scale,
+                        )
+
                 case _:
-                    continue   
+                    continue
 
             scene.reset()
             scene.run()
-            
-        
+
         # manipulating the objects
         elif event.type == pygame.MOUSEBUTTONDOWN:
             # get mouse position
@@ -103,23 +112,26 @@ while running:
             # get first object that this collides with
             for renderable in scene.object_renderers:
                 if renderable.check_mouse_hover(scene, mouse_pos):
+                    initial_mouse_pos = mouse_pos
+                    initial_moved_loc = renderable.obj.location
                     moved = renderable
                     dragging = True
                     break
         elif event.type == pygame.MOUSEBUTTONUP:
             moved = None
             dragging = False
+            scene.reset()
             scene.run()
-            
+
         elif event.type == pygame.MOUSEMOTION:
             if moved is not None and dragging:
-                movement = pygame.mouse.get_rel()
+                mouse_pos = pygame.mouse.get_pos()
+                x = -scene.from_scene_scale(initial_mouse_pos[0]-mouse_pos[0])
+                y = scene.from_scene_scale(initial_mouse_pos[1]-mouse_pos[1])
                 
-                old_pos = scene.to_scene_coords(moved.obj.location)
-                new_pos = scene.from_scene_coords((old_pos[0] + movement[0], old_pos[1]+movement[1]))
-                moved.obj.location = new_pos
-                
-                scene.render()
-        
-        
+
+                moved.obj.location = initial_moved_loc + asarray((x, y))
+                scene.reset()
+                scene.run()
+
     pygame.display.flip()

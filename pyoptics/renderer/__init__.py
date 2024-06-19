@@ -1,7 +1,8 @@
 from abc import ABC, abstractmethod
 from math import asin, cos, sin, dist
 
-from numpy import asarray
+
+import numpy as np
 import pygame
 
 from ..optics2d import *
@@ -10,7 +11,7 @@ __all__ = [
     "Renderable",
     "RenderRay",
     "RenderFlat",
-    "RenderArc",
+    "RenderSpherical",
     "RenderLens",
     "RenderScene",
 ]
@@ -31,16 +32,18 @@ DEFAULT_LINE_WIDTH = 1
 
 class Renderable(ABC):
     def __init__(self, obj, color=BLUE, width=DEFAULT_LINE_WIDTH) -> None:
-        self.obj: Optic|RayEmitter = obj
+        self.obj: Optic | RayEmitter = obj
         self.color = color
         self.linewidth = width
 
     @abstractmethod
     def render(self, scene: "RenderScene") -> None:
         raise NotImplementedError
-    
+
     @abstractmethod
-    def check_mouse_hover(self, scene: "RenderScene" , mouse_pos: tuple[int, int]) -> bool:
+    def check_mouse_hover(
+        self, scene: "RenderScene", mouse_pos: tuple[int, int]
+    ) -> bool:
         """Return whether the mouse hovers over this object"""
         raise NotImplementedError
 
@@ -53,34 +56,33 @@ class RenderRay(Renderable):
         super().__init__(obj, color)
         self.ray_color = ray_color
         self.ray_width = ray_width
-        
 
     def render(self, scene: "RenderScene"):
         loc = tuple(scene.to_scene_coords(self.obj.location))
         points = [loc] + list(
             map(
-                lambda x : tuple(scene.to_scene_coords(x)),
+                lambda x: tuple(scene.to_scene_coords(x)),
                 self.obj.bounce_locations + [self.obj.last_bounce_location],
             )
         )
         pygame.draw.circle(scene.scr, self.color, loc, scene.scale / 10)
         if len(points) >= 2:
             pygame.draw.lines(scene.scr, self.ray_color, False, points, self.ray_width)
-            
-    def check_mouse_hover(self, scene: "RenderScene" , mouse_pos: tuple[int, int]) -> bool:
-        return dist(self.obj.location, scene.from_scene_coords(mouse_pos)) <= scene.scale / 10
+
+    def check_mouse_hover(
+        self, scene: "RenderScene", mouse_pos: tuple[int, int]
+    ) -> bool:
+        return dist(self.obj.location, scene.from_scene_coords(mouse_pos)) <= 0.1
 
 
 class RenderFlat(Renderable):
-    
+
     def __calculate_vec(self) -> VecArg:
         self.obj: FlatMirror
         ang = self.obj.rotation
         scale = self.obj.scale / 2
-        return asarray((cos(ang) * scale, sin(ang) * scale))
+        return np.asarray((cos(ang) * scale, sin(ang) * scale))
 
-        
-    
     def render(self, scene: "RenderScene"):
         loc = self.obj.location
         vec = self.__calculate_vec()
@@ -88,13 +90,27 @@ class RenderFlat(Renderable):
         start = scene.to_scene_coords(loc + vec)
         end = scene.to_scene_coords(loc - vec)
 
-        pygame.draw.line(scene.scr, self.color, tuple(start), tuple(end), width=self.linewidth)
-        
-    def check_mouse_hover(self, scene: "RenderScene", mouse_pos: tuple[int, int]) -> bool:
-        return dist(self.obj.location, scene.from_scene_coords(mouse_pos)) <= self.obj.scale/2
+        pygame.draw.line(
+            scene.scr, self.color, tuple(start), tuple(end), width=self.linewidth
+        )
+
+    def check_mouse_hover(
+        self, scene: "RenderScene", mouse_pos: tuple[int, int]
+    ) -> bool:
+
+        vec = self.__calculate_vec()
+        mv = scene.from_scene_coords(mouse_pos) - self.obj.location
+
+        distance = dist(self.obj.location, scene.from_scene_coords(mouse_pos))
+
+        direction_diff = abs(np.dot(vec, mv) / np.linalg.norm(mv) / self.obj.scale) * 2
+
+        return (
+            distance <= self.obj.scale / 2 and direction_diff > 0.96
+        ) or distance <= self.obj.scale / 20
 
 
-class RenderArc(Renderable):
+class RenderSpherical(Renderable):
     def render(self, scene: "RenderScene"):
         self.obj: SphericalMirror
         rot = -self.obj.rotation
@@ -118,13 +134,18 @@ class RenderArc(Renderable):
                 scene.to_scene_scale(2 * radius),
                 scene.to_scene_scale(2 * radius),
             ),
-            -asin(chord/radius/2) - rot,
-            asin(chord/radius/2) - rot,
+            -asin(chord / radius / 2) - rot,
+            asin(chord / radius / 2) - rot,
             width=self.linewidth,
         )
-        
-    def check_mouse_hover(self, scene: "RenderScene", mouse_pos: tuple[int, int]) -> bool:
-        return dist(self.obj.location, scene.from_scene_coords(mouse_pos)) <= self.obj.chord_len/2
+
+    def check_mouse_hover(
+        self, scene: "RenderScene", mouse_pos: tuple[int, int]
+    ) -> bool:
+        return (
+            dist(self.obj.location, scene.from_scene_coords(mouse_pos))
+            <= self.obj._max_distance  # pylint: disable=W0212 # I know what I'm doing, don't scream at me
+        )
 
 
 class RenderLens(Renderable):
@@ -132,7 +153,7 @@ class RenderLens(Renderable):
 
     def render(self, scene):
         raise NotImplementedError
-    
+
     def check_mouse_hover(self, scene, mouse_pos):
         raise NotImplementedError
 
@@ -143,7 +164,7 @@ class RenderScene:
         system: OpticSystem,
         scr: pygame.Surface,
         steps: int = STEPS,
-        scale: float|int = PYGAME_SCALE,
+        scale: float | int = PYGAME_SCALE,
         middle: tuple[int, int] = PYGAME_MIDDLE_OFFSET,
     ) -> None:
         self.system = system
@@ -189,22 +210,26 @@ class RenderScene:
             j.render(self)
 
     def to_scene_coords(self, vec: VecArg) -> VecArg:
-        return asarray((
-            vec[0] * self.scale + self.middle[0],
-            -vec[1] * self.scale + self.middle[1],
-        ))
+        return np.asarray(
+            (
+                vec[0] * self.scale + self.middle[0],
+                -vec[1] * self.scale + self.middle[1],
+            )
+        )
 
     def to_scene_scale(self, val: float) -> float:
         return val * self.scale
-    
+
     def from_scene_scale(self, val: float) -> float:
         return val / self.scale
 
     def from_scene_coords(self, loc: tuple[float, float]) -> VecArg:
-        return asarray((
-            (loc[0] - self.middle[0]) / self.scale,
-            -(loc[1] - self.middle[1]) / self.scale,
-        ))
+        return np.asarray(
+            (
+                (loc[0] - self.middle[0]) / self.scale,
+                -(loc[1] - self.middle[1]) / self.scale,
+            )
+        )
 
     @staticmethod
     def _make_renderer(obj):
@@ -214,7 +239,7 @@ class RenderScene:
             case FlatMirror():
                 return RenderFlat(obj)
             case SphericalMirror():
-                return RenderArc(obj)
+                return RenderSpherical(obj)
             case Lens():
                 return RenderLens(obj)
             case _:
