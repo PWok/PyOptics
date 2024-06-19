@@ -1,9 +1,11 @@
 from abc import ABC, abstractmethod
 from locale import normalize
 from math import asin, atan, copysign, cos, isclose, pi, sin, sqrt, tan
-from typing import Iterable, TypeAlias
+from typing import Iterable, TypeAlias, Any
 
 import numpy as np
+from numpy import asarray
+
 
 __all__ = [
     "RayEmitter",
@@ -17,10 +19,10 @@ __all__ = [
 ]
 
 
-VecArg: TypeAlias = tuple[float, float]
+VecArg: TypeAlias = np.ndarray[np.floating, Any]
 Angle: TypeAlias = float
 
-DirectionVec: TypeAlias = np.ndarray
+DirectionVec: TypeAlias = np.ndarray[np.floating, Any]
 
 PI = pi
 PI_HALF = PI / 2
@@ -29,11 +31,11 @@ BIG_NUMBER = 1000
 
 
 class RayEmitter:
-    def __init__(self, location: VecArg, rotation) -> None:
-        self.location = location
+    def __init__(self, location, rotation) -> None:
+        self.location: VecArg = asarray(location)
         self.rotation = rotation
 
-        self.last_bounce_location: VecArg = location
+        self.last_bounce_location: VecArg = asarray(location)
         self.last_bounce_direction: Angle = rotation
 
         self.bounce_locations: list[VecArg] = []
@@ -46,6 +48,11 @@ class RayEmitter:
 
 
 class Optic(ABC):
+    
+    @abstractmethod
+    def __init__(self) -> None:
+        self.location: VecArg
+    
     @abstractmethod
     def get_bounce(self, ray: RayEmitter) -> tuple[VecArg, Angle] | None:
         """return the coordinates of the next contact of a given light ray with this Optic and the rays new direction.
@@ -56,7 +63,7 @@ class Optic(ABC):
 
         Returns
         -------
-        tuple[np.ndarray, Angle] | None
+        tuple[ndarray, Angle] | None
             A location-angle pair or None if the given light ray does not interact with this optic.
 
         """
@@ -66,21 +73,21 @@ class Optic(ABC):
 # TODO
 class Lens(Optic):
     def __init__(
-        self, location: VecArg, rotation: Angle, scale: float, focal1=1.0, focal2=1.0
+        self, location, rotation: Angle, scale: float, focal1=1.0, focal2=1.0
     ) -> None:
-        self.location = location
+        self.location: VecArg = asarray(location)
         self.rotation = rotation
         self.scale = scale
         self.focal1 = focal1
         self.focal2 = focal2
 
-    def get_bounce(self, ray: RayEmitter) -> tuple[tuple[float, float], float] | None:
+    def get_bounce(self, ray: RayEmitter) -> tuple[VecArg, float] | None:
         return None
 
 
 class FlatMirror(Optic):
-    def __init__(self, location: VecArg, rotation: Angle, scale: float) -> None:
-        self.location = location
+    def __init__(self, location, rotation: Angle, scale: float) -> None:
+        self.location = asarray(location)
         self.rotation = rotation - PI_HALF
         self.scale = scale
 
@@ -104,7 +111,7 @@ class FlatMirror(Optic):
         x = dx / d
         y = dy / d
 
-        point = (x, y)
+        point = asarray((x, y))
         if _distance(point, self.location) > self.scale / 2:
             return None
 
@@ -130,12 +137,12 @@ class FlatMirror(Optic):
 
 class SphericalMirror(Optic):
     def __init__(
-        self, location: VecArg, rotation: Angle, chord: float, focal: float = 1
+        self, location, rotation: Angle, chord: float, focal: float = 1
     ) -> None:
         """
         Describe a spherical mirror by the location of its center, rotation, chord and focal length
         """
-        self.location: np.ndarray = np.array(location)
+        self.location = asarray(location)
         self.rotation: Angle = rotation
         self.chord_len: float = chord
         self.focal = focal
@@ -151,9 +158,8 @@ class SphericalMirror(Optic):
             + (self._radius - sqrt(self._radius**2 - (self.chord_len/2) ** 2)) ** 2
         )  # arc_angle_fourth
 
-    def _get_intersection(
-        self, prev_location: VecArg, direction: Angle
-    ) -> VecArg | None:
+
+    def __calculate_delta(self, prev_location, direction) -> tuple[float, float] | None:
         a, b = prev_location
         c, d = _angle_to_direction_vec(direction)
         m = self._center_x
@@ -162,27 +168,43 @@ class SphericalMirror(Optic):
         under_root = 4 * (a * c + b * d - c * m - d * n) ** 2 - 4 * (
             c**2 + d**2
         ) * (a**2 - 2 * a * m + b**2 - 2 * b * n + m**2 + n**2 - r**2)
+        
         if under_root < 0:
             return None
 
-        t1 = (1 / 2 * sqrt(under_root) - a * c - b * d + c * m + d * n) / (c**2 + d**2)
-        t2 = (-1 / 2 * sqrt(under_root) - a * c - b * d + c * m + d * n) / (c**2 + d**2)
+        distance1 = (1 / 2 * sqrt(under_root) - a * c - b * d + c * m + d * n) / (c**2 + d**2)
+        distance2 = (-1 / 2 * sqrt(under_root) - a * c - b * d + c * m + d * n) / (c**2 + d**2)
+        
+        return distance1, distance2
+        
 
-        p1 = (a + t1 * c, b + t1 * d)
-        p2 = (a + t2 * c, b + t2 * d)
+    def _get_intersection(
+        self, prev_location: VecArg, direction: Angle
+    ) -> VecArg | None:
+        
+        distances = self.__calculate_delta(prev_location, direction)
+        if distances is None:
+            return None
+        
+        distance1, distance2 = distances
+        
+        dir_vec = _angle_to_direction_vec(direction)
 
-        ret1 = _distance(p1, self.location) <= self._max_distance and t1 > 0
-        ret2 = _distance(p2, self.location) <= self._max_distance and t2 > 0
+        point1 = prev_location + dir_vec*distance1
+        point2 = prev_location + dir_vec*distance2
+
+        ret1 = _distance(point1, self.location) <= self._max_distance and distance1 > 0
+        ret2 = _distance(point2, self.location) <= self._max_distance and distance2 > 0
 
         if ret1 and ret2:
-            if t1 < t2 or isclose(t2, 0, abs_tol=1e-14):
-                return p1
+            if distance1 < distance2 or isclose(distance2, 0, abs_tol=1e-14):
+                return point1
             else:
-                return p2
+                return point2
         if ret1:
-            return p1
+            return point1
         if ret2:
-            return p2
+            return point2
         return None
 
     def get_bounce(self, ray: RayEmitter) -> tuple[VecArg, Angle] | None:
@@ -241,7 +263,7 @@ class OpticSystem:
 
         # TODO this is awful. REDO all of this
         for ray in self.rays:
-            loc = ray.last_bounce_location
+            loc: VecArg = ray.last_bounce_location
             direction = ray.last_bounce_direction
 
             intersections = [optic.get_bounce(ray) for optic in self.optics]
@@ -250,7 +272,7 @@ class OpticSystem:
             new_direction = direction
             new_distance = float("inf")
 
-            arr_loc = np.asarray(loc)
+            arr_loc = asarray(loc)
 
             dir_vect = _angle_to_direction_vec(direction)
 
@@ -265,7 +287,7 @@ class OpticSystem:
 
                 if (
                     dis < new_distance
-                    and _points_close(dir_vect, _normalize(np.asarray(l) - arr_loc))
+                    and _points_close(dir_vect, _normalize(asarray(l) - arr_loc))
                     and not (_points_close(loc, l))
                 ):
                     new_loc = l
@@ -274,10 +296,10 @@ class OpticSystem:
 
             if new_loc is None:
                 ray.bounce_locations.append(loc)
-                ray.last_bounce_location = tuple(arr_loc + BIG_NUMBER * dir_vect)
+                ray.last_bounce_location = arr_loc + BIG_NUMBER * dir_vect
                 fin += 1
                 continue
-            if loc != new_loc or direction != new_direction:
+            if all(loc != new_loc) or direction != new_direction:
                 ray.bounce_locations.append(loc)
                 ray.last_bounce_location = new_loc
                 ray.last_bounce_direction = new_direction
@@ -285,16 +307,12 @@ class OpticSystem:
         return fin == len(self.rays)
 
 
-def _distance(point_a: VecArg | np.ndarray, point_b: VecArg | np.ndarray):
-    return np.linalg.norm(np.asarray(point_a) - np.asarray(point_b))
+def _distance(point_a: VecArg, point_b: VecArg):
+    return np.linalg.norm(point_a - point_b)
 
 
-def _angle_to_direction_vec(ang: Angle) -> np.ndarray:
+def _angle_to_direction_vec(ang: Angle) -> VecArg:
     return np.array((cos(ang), sin(ang)))
-
-
-def _arr_to_VecArg(arr: np.ndarray) -> tuple[float, float]:
-    return (arr[0], arr[1])
 
 
 def _direction_vec_to_angle(direction: DirectionVec):
@@ -308,32 +326,17 @@ def _direction_vec_to_angle(direction: DirectionVec):
     )
 
 
-def _normalize(vector: np.ndarray) -> np.ndarray:
+def _normalize(vector: VecArg) -> VecArg:
     """Returns the unit vector of the vector"""
     return vector / np.linalg.norm(vector)
 
 
-def _perpendicular(vector: np.ndarray) -> np.ndarray:
-    return np.array(vector[1], -vector[0])
-
-
 def _points_close(
-    p1: VecArg | np.ndarray, p2: VecArg | np.ndarray, *, rel_tol=1e-9, abs_tol=1e-12
+    p1: VecArg, p2: VecArg, *, rel_tol=1e-9, abs_tol=1e-12
 ):
     return isclose(p1[0], p2[0], abs_tol=abs_tol, rel_tol=rel_tol) and isclose(
         p1[1], p2[1], abs_tol=abs_tol, rel_tol=rel_tol
     )
-
-
-def _angle_between(v1: np.ndarray, v2: np.ndarray) -> np.ndarray:
-    """Returns the angle in radians between vectors 'v1' and 'v2'. Shamelessly stolen from
-    https://stackoverflow.com/questions/2827393/angles-between-two-n-dimensional-vectors-in-python/13849249#13849249
-    becuase im here to write code not do linear algebra
-    """
-    v1_u = _normalize(v1)
-    v2_u = _normalize(v2)
-    return np.arccos(np.clip(np.dot(v1_u, v2_u), -1.0, 1.0))
-
 
 def _normalize_angle(ang: Angle):
     while ang > pi:

@@ -12,7 +12,7 @@ parser.add_argument("-c", "--config", help="Path to a configuration file", defau
 parser.add_argument(
     "-r",
     "--resolution",
-    help="Resolution of the rendered window",
+    help="Resolution of the rendered window (width and height)",
     nargs=2,
     type=int,
     default=(600, 600),
@@ -41,7 +41,13 @@ scene.run()
 pygame.display.flip()
 
 
+
+# TODO: zmienne globalne... trzeba to przerobić
+moved = None
+dragging = False
+
 running = True
+
 while running:
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
@@ -88,4 +94,32 @@ while running:
 
             scene.reset()
             scene.run()
-            pygame.display.flip()
+            
+        
+        # manipulating the objects
+        elif event.type == pygame.MOUSEBUTTONDOWN:
+            # get mouse position
+            mouse_pos = pygame.mouse.get_pos()
+            # get first object that this collides with
+            for renderable in scene.object_renderers:
+                if renderable.check_mouse_hover(scene, mouse_pos):
+                    moved = renderable
+                    dragging = True
+                    break
+        elif event.type == pygame.MOUSEBUTTONUP:
+            moved = None
+            dragging = False
+            scene.run()
+            
+        elif event.type == pygame.MOUSEMOTION:
+            if moved is not None and dragging:
+                movement = pygame.mouse.get_rel()
+                
+                old_pos = scene.to_scene_coords(moved.obj.location)
+                new_pos = scene.from_scene_coords((old_pos[0] + movement[0], old_pos[1]+movement[1]))
+                moved.obj.location = new_pos
+                
+                scene.render()
+        
+        
+    pygame.display.flip()

@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
-from math import asin, cos, sin
+from math import asin, cos, sin, dist
 
+from numpy import asarray
 import pygame
 
 from ..optics2d import *
@@ -28,22 +29,19 @@ PYGAME_MIDDLE_OFFSET = (300, 300)
 DEFAULT_LINE_WIDTH = 1
 
 
-def _vector_add(vec1: VecArg, vec2: VecArg) -> VecArg:
-    return (vec1[0] + vec2[0], vec1[1] + vec2[1])
-
-
-def _vector_mult(vec: VecArg, scalar: float | int) -> VecArg:
-    return (vec[0] * scalar, vec[1] * scalar)
-
-
 class Renderable(ABC):
     def __init__(self, obj, color=BLUE, width=DEFAULT_LINE_WIDTH) -> None:
-        self.obj = obj
+        self.obj: Optic|RayEmitter = obj
         self.color = color
-        self.width = width
+        self.linewidth = width
 
     @abstractmethod
     def render(self, scene: "RenderScene") -> None:
+        raise NotImplementedError
+    
+    @abstractmethod
+    def check_mouse_hover(self, scene: "RenderScene" , mouse_pos: tuple[int, int]) -> bool:
+        """Return whether the mouse hovers over this object"""
         raise NotImplementedError
 
 
@@ -55,33 +53,45 @@ class RenderRay(Renderable):
         super().__init__(obj, color)
         self.ray_color = ray_color
         self.ray_width = ray_width
+        
 
     def render(self, scene: "RenderScene"):
-        loc = scene.to_scene_coords(self.obj.location)
+        loc = tuple(scene.to_scene_coords(self.obj.location))
         points = [loc] + list(
             map(
-                scene.to_scene_coords,
+                lambda x : tuple(scene.to_scene_coords(x)),
                 self.obj.bounce_locations + [self.obj.last_bounce_location],
             )
         )
         pygame.draw.circle(scene.scr, self.color, loc, scene.scale / 10)
         if len(points) >= 2:
             pygame.draw.lines(scene.scr, self.ray_color, False, points, self.ray_width)
+            
+    def check_mouse_hover(self, scene: "RenderScene" , mouse_pos: tuple[int, int]) -> bool:
+        return dist(self.obj.location, scene.from_scene_coords(mouse_pos)) <= scene.scale / 10
 
 
 class RenderFlat(Renderable):
-    def render(self, scene: "RenderScene"):
+    
+    def __calculate_vec(self) -> VecArg:
         self.obj: FlatMirror
         ang = self.obj.rotation
         scale = self.obj.scale / 2
+        return asarray((cos(ang) * scale, sin(ang) * scale))
+
+        
+    
+    def render(self, scene: "RenderScene"):
         loc = self.obj.location
+        vec = self.__calculate_vec()
 
-        vec = (cos(ang) * scale, sin(ang) * scale)
+        start = scene.to_scene_coords(loc + vec)
+        end = scene.to_scene_coords(loc - vec)
 
-        start = scene.to_scene_coords(_vector_add(loc, vec))
-        end = scene.to_scene_coords(_vector_add(loc, _vector_mult(vec, -1)))
-
-        pygame.draw.line(scene.scr, self.color, start, end, width=self.width)
+        pygame.draw.line(scene.scr, self.color, tuple(start), tuple(end), width=self.linewidth)
+        
+    def check_mouse_hover(self, scene: "RenderScene", mouse_pos: tuple[int, int]) -> bool:
+        return dist(self.obj.location, scene.from_scene_coords(mouse_pos)) <= self.obj.scale/2
 
 
 class RenderArc(Renderable):
@@ -97,7 +107,7 @@ class RenderArc(Renderable):
             scene.to_scene_scale(-radius * sin(rot) - radius),
         )
 
-        loc = _vector_add(scene.to_scene_coords(tuple(self.obj.location)), vec)
+        loc = scene.to_scene_coords(self.obj.location) + vec
 
         pygame.draw.arc(
             scene.scr,
@@ -110,15 +120,21 @@ class RenderArc(Renderable):
             ),
             -asin(chord/radius/2) - rot,
             asin(chord/radius/2) - rot,
-            width=self.width,
+            width=self.linewidth,
         )
+        
+    def check_mouse_hover(self, scene: "RenderScene", mouse_pos: tuple[int, int]) -> bool:
+        return dist(self.obj.location, scene.from_scene_coords(mouse_pos)) <= self.obj.chord_len/2
 
 
 class RenderLens(Renderable):
     NotImplemented
 
     def render(self, scene):
-        pass
+        raise NotImplementedError
+    
+    def check_mouse_hover(self, scene, mouse_pos):
+        raise NotImplementedError
 
 
 class RenderScene:
@@ -172,20 +188,23 @@ class RenderScene:
         for j in self.object_renderers:
             j.render(self)
 
-    def to_scene_coords(self, vec: VecArg):
-        return (
+    def to_scene_coords(self, vec: VecArg) -> VecArg:
+        return asarray((
             vec[0] * self.scale + self.middle[0],
             -vec[1] * self.scale + self.middle[1],
-        )
+        ))
 
-    def to_scene_scale(self, val: float):
+    def to_scene_scale(self, val: float) -> float:
         return val * self.scale
+    
+    def from_scene_scale(self, val: float) -> float:
+        return val / self.scale
 
-    def from_scene_coords(self, loc: tuple[int, int]):
-        return (
+    def from_scene_coords(self, loc: tuple[float, float]) -> VecArg:
+        return asarray((
             (loc[0] - self.middle[0]) / self.scale,
             -(loc[1] - self.middle[1]) / self.scale,
-        )
+        ))
 
     @staticmethod
     def _make_renderer(obj):
