@@ -52,6 +52,8 @@ class Optic(ABC):
     @abstractmethod
     def __init__(self) -> None:
         self.location: VecArg
+        self.scale: float
+        self.rotation: Angle
 
     @abstractmethod
     def get_bounce(self, ray: RayEmitter) -> tuple[VecArg, Angle] | None:
@@ -184,11 +186,11 @@ class SphericalMirror(Optic):
         self._center = np.array((self._center_x, self._center_y))
 
     @property
-    def chord_len(self):
+    def scale(self):
         return self.__chord_len
 
-    @chord_len.setter
-    def chord_len(self, value):
+    @scale.setter
+    def scale(self, value):
         self.__chord_len = value
 
         self._max_distance = sqrt(

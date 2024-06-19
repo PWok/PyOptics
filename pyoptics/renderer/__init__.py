@@ -114,7 +114,7 @@ class RenderSpherical(Renderable):
     def render(self, scene: "RenderScene"):
         self.obj: SphericalMirror
         rot = -self.obj.rotation
-        chord = self.obj.chord_len
+        chord = self.obj.scale
 
         radius = self.obj.focal * 2
 

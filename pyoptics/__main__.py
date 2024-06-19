@@ -59,6 +59,19 @@ class UIRunner:
                     self.moved = renderable
                     self.dragging = True
                     break
+        # rotate      
+        elif event.type == pygame.MOUSEWHEEL:
+            obj = None
+            mouse_pos = pygame.mouse.get_pos()
+            for renderable in self.scene.object_renderers:
+                if renderable.check_mouse_hover(self.scene, mouse_pos):
+                    obj = renderable.obj
+                    break
+                
+            if obj is None:
+                return True
+            
+            obj.rotation += event.y/100
 
         elif event.type == pygame.MOUSEBUTTONUP:
             self.moved = None
