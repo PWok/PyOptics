@@ -62,7 +62,7 @@ class RenderRay(Renderable):
         points = [loc] + list(
             map(
                 lambda x: tuple(scene.to_scene_coords(x)),
-                self.obj.bounce_locations + [self.obj.last_bounce_location],
+                self.obj.bounce_locations + [self.obj.current_ray_location],
             )
         )
         pygame.draw.circle(scene.scr, self.color, loc, scene.scale / 10)

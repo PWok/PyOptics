@@ -1,6 +1,5 @@
 from abc import ABC, abstractmethod
-from locale import normalize
-from math import asin, atan, copysign, cos, isclose, pi, sin, sqrt, tan
+from math import atan, copysign, cos, isclose, pi, sin, sqrt, tan
 from typing import Iterable, TypeAlias, Any
 
 import numpy as np
@@ -31,23 +30,27 @@ BIG_NUMBER = 1000
 
 
 class RayEmitter:
+    """An emitter of laser light"""
+
     def __init__(self, location, rotation) -> None:
         self.location: VecArg = asarray(location)
         self.rotation = rotation
 
-        self.last_bounce_location: VecArg = asarray(location)
+        self.current_ray_location: VecArg = asarray(location)
         self.last_bounce_direction: Angle = rotation
 
         self.bounce_locations: list[VecArg] = []
 
     def reset(self):
-        self.last_bounce_location = self.location
+        """Reset the path traveled by the ray"""
+        self.current_ray_location = self.location
         self.last_bounce_direction = self.rotation
 
         self.bounce_locations = []
 
 
 class Optic(ABC):
+    """Abstract Base Class for Optics"""
 
     @abstractmethod
     def __init__(self) -> None:
@@ -57,7 +60,8 @@ class Optic(ABC):
 
     @abstractmethod
     def get_bounce(self, ray: RayEmitter) -> tuple[VecArg, Angle] | None:
-        """return the coordinates of the next contact of a given light ray with this Optic and the rays new direction.
+        """
+        return location of contact with and new travel direction of a ray coliding with this Optic
 
         Parameters
         ----------
@@ -88,6 +92,8 @@ class Lens(Optic):
 
 
 class FlatMirror(Optic):
+    """A Flat mirror optic"""
+
     def __init__(self, location, rotation: Angle, scale: float) -> None:
         self.location = asarray(location)
         self.rotation = rotation - PI_HALF
@@ -121,7 +127,7 @@ class FlatMirror(Optic):
 
     def get_bounce(self, ray) -> tuple[VecArg, float] | None:
         point = self._get_intersection(
-            ray.last_bounce_location, ray.last_bounce_direction
+            ray.current_ray_location, ray.last_bounce_direction
         )
 
         if point is None:
@@ -138,6 +144,8 @@ class FlatMirror(Optic):
 
 
 class SphericalMirror(Optic):
+    """A spherical mirror optic"""
+
     def __init__(
         self, location, rotation: Angle, chord: float, focal: float = 1
     ) -> None:
@@ -162,7 +170,7 @@ class SphericalMirror(Optic):
         )  # arc_angle_fourth
 
     @property
-    def location(self) -> VecArg:
+    def location(self) -> VecArg: # pylint: disable=C0116
         return self.__location
 
     @location.setter
@@ -174,7 +182,7 @@ class SphericalMirror(Optic):
         self._center = np.array((self._center_x, self._center_y))
 
     @property
-    def rotation(self):
+    def rotation(self): # pylint: disable=C0116
         return self.__rotation
 
     @rotation.setter
@@ -186,7 +194,7 @@ class SphericalMirror(Optic):
         self._center = np.array((self._center_x, self._center_y))
 
     @property
-    def scale(self):
+    def scale(self): # pylint: disable=C0116 # Pylint enforces docstrins on properties? Why?
         return self.__chord_len
 
     @scale.setter
@@ -255,12 +263,8 @@ class SphericalMirror(Optic):
         point1 = prev_location + dir_vec * distance1
         point2 = prev_location + dir_vec * distance2
 
-        ret1 = (
-            _distance(point1, self.location) <= self._max_distance and distance1 > 0
-        )
-        ret2 = (
-            _distance(point2, self.location) <= self._max_distance and distance2 > 0
-        )
+        ret1 = _distance(point1, self.location) <= self._max_distance and distance1 > 0
+        ret2 = _distance(point2, self.location) <= self._max_distance and distance2 > 0
 
         if ret1 and ret2:
             if distance1 < distance2 or isclose(distance2, 0, abs_tol=1e-14):
@@ -274,7 +278,7 @@ class SphericalMirror(Optic):
         return None
 
     def get_bounce(self, ray: RayEmitter) -> tuple[VecArg, Angle] | None:
-        prev_location = ray.last_bounce_location
+        prev_location = ray.current_ray_location
         dir_angle = ray.last_bounce_direction
         p_inter = self._get_intersection(prev_location, dir_angle)
         if p_inter is None:
@@ -292,6 +296,8 @@ class SphericalMirror(Optic):
 
 
 class OpticSystem:
+    """A system of optics. Agregates laser ray emitters and optics, and runs the simulation"""
+
     def __init__(
         self,
         optics: Iterable[Optic] | None = None,
@@ -306,10 +312,12 @@ class OpticSystem:
         self.rays: list[RayEmitter] = list(rays)
 
     def reset(self) -> None:
+        """Reset all light emitters"""
         for i in self.rays:
             i.reset()
 
     def add(self, obj: Optic | RayEmitter):
+        """Add an optic or a light source into the simulation"""
         if isinstance(obj, Optic):
             self.optics.append(obj)
         else:
@@ -327,9 +335,8 @@ class OpticSystem:
 
         fin = 0
 
-        # TODO this is awful. REDO all of this
         for ray in self.rays:
-            loc: VecArg = ray.last_bounce_location
+            loc = ray.current_ray_location
             direction = ray.last_bounce_direction
 
             intersections = [optic.get_bounce(ray) for optic in self.optics]
@@ -338,13 +345,10 @@ class OpticSystem:
             new_direction = direction
             new_distance = float("inf")
 
-            arr_loc = asarray(loc)
-
             dir_vect = _angle_to_direction_vec(direction)
 
             for inter in intersections:
                 if inter is None:
-
                     continue
 
                 l = inter[0]
@@ -352,9 +356,9 @@ class OpticSystem:
                 dis = _distance(loc, l)
 
                 if (
-                    dis < new_distance
-                    and _points_close(dir_vect, _normalize(asarray(l) - arr_loc))
-                    and not (_points_close(loc, l))
+                    dis < new_distance # check if new contact point is closer
+                    and _points_close(dir_vect, _normalize(l - loc)) # check if the bounce direction is correct
+                    and not _points_close(loc, l) # check if not stuck in loop due to float rounding
                 ):
                     new_loc = l
                     new_direction = inter[1]
@@ -362,12 +366,12 @@ class OpticSystem:
 
             if new_loc is None:
                 ray.bounce_locations.append(loc)
-                ray.last_bounce_location = arr_loc + BIG_NUMBER * dir_vect
+                ray.current_ray_location = loc + BIG_NUMBER * dir_vect
                 fin += 1
                 continue
             if all(loc != new_loc) or direction != new_direction:
                 ray.bounce_locations.append(loc)
-                ray.last_bounce_location = new_loc
+                ray.current_ray_location = new_loc
                 ray.last_bounce_direction = new_direction
 
         return fin == len(self.rays)
