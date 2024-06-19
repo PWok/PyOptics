@@ -12,6 +12,7 @@ pygame = "^2.5.2"
 
 [tool.poetry.group.dev.dependencies]
 mypy = "^1.10.0"
+pylint = "^3.2.3"
 
 [build-system]
 requires = ["poetry-core"]

@@ -1,5 +1,6 @@
 import argparse
 import sys
+import warnings
 
 from numpy import asarray
 import pygame
@@ -176,4 +177,5 @@ def main():
 
 
 if __name__ == "__main__":
+    warnings.filterwarnings("ignore")
     sys.exit(main())

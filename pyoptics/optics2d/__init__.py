@@ -147,9 +147,9 @@ class SphericalMirror(Optic):
         self.__location = asarray(location)
         self.__rotation: Angle = rotation
         self.__chord_len: float = chord
-        self.focal = focal
+        self.__focal = focal
 
-        self.__radius = self.focal * 2
+        self.__radius = self.__focal * 2
 
         self._center_x = self.__location[0] - self.__radius * cos(self.__rotation)
         self._center_y = self.__location[1] - self.__radius * sin(self.__rotation)
@@ -200,12 +200,14 @@ class SphericalMirror(Optic):
         )
 
     @property
-    def radius(self):
-        return self.__radius
+    def focal(self): # pylint: disable=C0116
+        return self.__focal
 
-    @radius.setter
-    def radius(self, value):
-        self.__radius = value
+    @focal.setter
+    def focal(self, value):
+        self.__focal = value
+        
+        self.__radius = 2*value
         self._center_x = self.__location[0] - self.__radius * cos(self.__rotation)
         self._center_y = self.__location[1] - self.__radius * sin(self.__rotation)
         self._center = np.array((self._center_x, self._center_y))
